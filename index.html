@@ -34,7 +34,7 @@
         /* === Базовые стили и анимации === */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         body { font-family: 'Inter', sans-serif; overflow: hidden; }
-
+        
         /* Фоновые градиенты */
         .bg-gradient-light { background: linear-gradient(135deg, #e0e7ff 0%, #f3f4f6 50%, #e2e8f0 100%); }
         .bg-gradient-dark { background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #172033 100%); }
@@ -77,6 +77,25 @@
         .slide-in-right.open { transform: translateX(0); }
         .fade-enter { opacity: 0; transition: opacity 0.3s; }
         .fade-enter-active { opacity: 1; }
+        /* Убеждаемся, что контейнер холста ведет себя правильно */
+#canvas-container {
+    display: flex !important;
+    flex-direction: column;
+    align-items: center !important;    /* Горизонталь */
+    justify-content: center !important; /* Вертикаль */
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+}
+
+/* Сам PDF */
+#pdf-canvas {
+    display: block !important;
+    margin: auto !important; /* Центрирует блок внутри flex */
+    max-width: 95% !important;
+    max-height: 85% !important;
+    object-fit: contain;
+}
     </style>
 </head>
 <body class="bg-gradient-light dark:bg-gradient-dark text-slate-800 dark:text-slate-200 h-screen w-screen flex flex-col transition-colors duration-300">
@@ -84,7 +103,7 @@
     <!-- 1. Экран загрузки (Init Screen) -->
     <div id="init-screen" class="absolute inset-0 flex flex-col items-center justify-center z-50 glass">
         <i class="fa-solid fa-spinner fa-spin text-5xl text-primary mb-4"></i>
-        <h2 class="text-xl font-bold">⏳ Բեռնվում են տվյալները...</h2>
+        <h2 class="text-xl font-bold">Բեռնվում են տվյալները...</h2>
     </div>
 
     <!-- 2. Стартовый экран (Start Screen) -->
@@ -109,8 +128,7 @@
     </div>
 
     <!-- 3. Основное приложение (Main App) -->
-    <div id="main-app" class="hidden flex-col h-full relative">
-        
+    <div id="main-app" class="hidden flex-col h-full relative">        
         <!-- Header Glass -->
         <header class="glass sticky top-0 z-20 px-4 py-3 flex flex-wrap items-center justify-between gap-3 shadow-sm">
             <div class="flex items-center gap-3 flex-wrap">
@@ -148,20 +166,20 @@
                 <!-- Tools -->
                 <button onclick="downloadCurrentPDF()" class="w-10 h-10 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 flex items-center justify-center transition-transform hover:scale-105" title="Ներբեռնել PDF"><i class="fa-solid fa-download"></i></button>
                 <button onclick="toggleDarkMode()" class="w-10 h-10 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 flex items-center justify-center transition-transform hover:scale-105"><i class="fa-solid fa-moon dark:hidden"></i><i class="fa-solid fa-sun hidden dark:inline-block"></i></button>
-                <button onclick="toggleAISidebar()" class="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-bold hover:shadow-lg hover:scale-105 transition-all flex items-center gap-2"><i class="fa-solid fa-robot"></i> ИИ Օգնական</button>
+                <button onclick="toggleAISidebar()" class="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-bold hover:shadow-lg hover:scale-105 transition-all flex items-center gap-2"><i class="fa-solid fa-robot"></i> AI Օգնական</button>
             </div>
         </header>
 
         <!-- Main Content Area (Canvas + Sidebar) -->
-        <div class="flex-1 flex overflow-hidden relative">
+        <div class="flex-1 overflow-hidden relative">
             <!-- Canvas Container -->
-            <div id="canvas-container" class="flex-1 p-4 md:p-8 overflow-auto flex items-start justify-center">
-                <div id="loading-text" class="mt-20 text-lg font-bold text-slate-500 animate-pulse flex flex-col items-center gap-4">
+                <div id="canvas-container" class="flex-1 p-4 md:p-8 overflow-auto flex items-center justify-center">
+                    <div id="loading-text" class="text-lg font-bold text-slate-500 animate-pulse flex flex-col items-center gap-4">
                     <i class="fa-regular fa-image text-4xl"></i>
                     <span>Նկարը բեռնվում է...</span>
                 </div>
-                <canvas id="pdf-canvas" class="hidden max-w-full h-auto bg-white border border-slate-200"></canvas>
-            </div>
+                <canvas id="pdf-canvas" class="hidden max-w-full h-auto bg-white border border-slate-200 m-auto"></canvas>
+</div>
 
             <!-- ИИ Sidebar (Slide in from right) -->
             <div id="ai-sidebar" class="slide-in-right glass absolute md:relative right-0 top-0 bottom-0 w-full md:w-[450px] border-l border-slate-200/50 dark:border-slate-700/50 z-30 flex flex-col shadow-2xl">
@@ -480,9 +498,10 @@
         }
 
         function processChoice(val, clickedBtn) {
-            const correctAns = fetchAnswerData(activeFile, currentTask).split(" / ")[0].trim(); 
+            const correctAns = fetchAnswerData(activeFile, currentTask).split(" / ")[0].trim();
             const isCorrect = val.toString() === correctAns.toString();
             
+            // Блокируем все кнопки ответов
             document.querySelectorAll('.choice-btn').forEach(btn => {
                 btn.disabled = true;
                 if (btn.innerText === correctAns) {
@@ -504,8 +523,21 @@
                 sessionWrong++; document.getElementById('stat-wrong').innerText = sessionWrong;
                 showFeedback(`❌ Սխալ է: Ճիշտը՝ ${correctAns}`, 'error');
                 saveWrongAnswer(activeFile, currentTask);
+                
+                // --- ДОБАВЛЕНО: Кнопка "Следующий" при неверном ответе ---
+                const container = document.getElementById('btn-container');
+                // Добавляем кнопку, если её еще нет в контейнере
+                if (!container.querySelector('.next-btn-wrong')) {
+                    const nextBtn = document.createElement('button');
+                    nextBtn.className = 'next-btn-wrong mt-4 px-8 py-3 rounded-xl bg-primary hover:bg-indigo-700 text-white font-bold shadow-md transition-transform hover:scale-105';
+                    nextBtn.innerHTML = `Հաջորդը <i class="fa-solid fa-arrow-right"></i>`;
+                    nextBtn.onclick = () => navigateTask(1);
+                    container.appendChild(nextBtn);
+                }
             }
         }
+
+            
 
         function showFullAnswer() {
             const ans = fetchAnswerData(activeFile, currentTask);
