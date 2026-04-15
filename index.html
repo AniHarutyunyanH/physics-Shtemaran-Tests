@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="hy" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shtemaran Quiz Master - AI Edition</title>
+    
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { colors: { primary: '#4f46e5', accent: '#f59e0b' } } }
+        }
+    </script>
+
+    <!-- Marked.js (для парсинга Markdown от ИИ) и FontAwesome -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- MathJax (ДЛЯ КРАСИВЫХ ФИЗИЧЕСКИХ ФОРМУЛ ИЗ LATEX) -->
+    <script>
+        MathJax = {
+          tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] }
+        };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+
+    <style>
+        /* === Базовые стили и анимации === */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; overflow: hidden; }
+        
+        /* Фоновые градиенты */
+        .bg-gradient-light { background: linear-gradient(135deg, #e0e7ff 0%, #f3f4f6 50%, #e2e8f0 100%); }
+        .bg-gradient-dark { background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #172033 100%); }
+
+        /* Стили Glassmorphism */
+        .glass {
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+        }
+        .dark .glass {
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        }
+
+        /* Инверсия Canvas для темной темы */
+        .dark #pdf-canvas { filter: invert(0.9) hue-rotate(180deg); border-color: #334155; }
+        #pdf-canvas { transition: filter 0.3s ease; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+
+        /* Стили скроллбара */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .dark ::-webkit-scrollbar-thumb { background: #475569; }
+
+        /* Markdown стили для ответов ИИ */
+        .markdown-body h1, .markdown-body h2, .markdown-body h3 { font-weight: bold; margin-top: 1em; margin-bottom: 0.5em; }
+        .markdown-body p { margin-bottom: 1em; line-height: 1.6; }
+        .markdown-body ul { list-style-type: disc; margin-left: 1.5em; margin-bottom: 1em; }
+        .markdown-body strong { color: #4f46e5; }
+        .dark .markdown-body strong { color: #818cf8; }
+        .markdown-body code { background: rgba(0,0,0,0.05); padding: 2px 4px; border-radius: 4px; font-family: monospace; }
+        .dark .markdown-body code { background: rgba(255,255,255,0.1); }
+
+        /* Утилиты перехода */
+        .slide-in-right { transform: translateX(100%); transition: transform 0.3s ease-in-out; }
+        .slide-in-right.open { transform: translateX(0); }
+        .fade-enter { opacity: 0; transition: opacity 0.3s; }
+        .fade-enter-active { opacity: 1; }
+        /* Убеждаемся, что контейнер холста ведет себя правильно */
+#canvas-container {
+    display: flex !important;
+    flex-direction: column;
+    align-items: center !important;    /* Горизонталь */
+    justify-content: center !important; /* Вертикаль */
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+}
+
+/* Сам PDF */
+#pdf-canvas {
+    display: block !important;
+    margin: auto !important; /* Центрирует блок внутри flex */
+    max-width: 95% !important;
+    max-height: 85% !important;
+    object-fit: contain;
+}
+    </style>
+</head>
+<body class="bg-gradient-light dark:bg-gradient-dark text-slate-800 dark:text-slate-200 h-screen w-screen flex flex-col transition-colors duration-300">
+
+    <!-- 1. Экран загрузки (Init Screen) -->
+    <div id="init-screen" class="absolute inset-0 flex flex-col items-center justify-center z-50 glass">
+        <i class="fa-solid fa-spinner fa-spin text-5xl text-primary mb-4"></i>
+        <h2 class="text-xl font-bold">Բեռնվում են տվյալները...</h2>
+    </div>
+
+    <!-- 2. Стартовый экран (Start Screen) -->
+    <div id="start-screen" class="hidden absolute inset-0 flex-col items-center justify-center z-40 p-4">
+        <div class="glass p-10 rounded-2xl flex flex-col items-center w-full max-w-md animate-[fadeIn_0.5s_ease-out]">
+            <h1 class="text-3xl font-bold mb-8 text-center text-slate-800 dark:text-white">Ընտրեք Շտեմարանը</h1>
+            
+            <button onclick="startQuiz('FILE 1')" class="w-full mb-4 px-6 py-4 rounded-xl font-bold text-white bg-primary hover:bg-indigo-700 hover:scale-[1.02] transition-all shadow-lg shadow-indigo-500/30">
+                Ֆիզիկա շտեմարան 1
+            </button>
+            <button onclick="startQuiz('FILE 2')" class="w-full mb-4 px-6 py-4 rounded-xl font-bold text-white bg-primary hover:bg-indigo-700 hover:scale-[1.02] transition-all shadow-lg shadow-indigo-500/30">
+                Ֆիզիկա շտեմարան 2
+            </button>
+            <button onclick="startQuiz('COMBINED')" class="w-full mb-8 px-6 py-4 rounded-xl font-bold text-white bg-indigo-500 hover:bg-indigo-600 hover:scale-[1.02] transition-all shadow-lg">
+                Շտեմարան 1 և 2 միասին
+            </button>
+            
+            <button onclick="showWrongList()" class="w-full px-6 py-3 rounded-xl font-bold text-slate-700 dark:text-slate-200 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-all">
+                Սխալները (Սովորել)
+            </button>
+        </div>
+    </div>
+
+    <!-- 3. Основное приложение (Main App) -->
+    <div id="main-app" class="hidden flex-col h-full relative">        
+        <!-- Header Glass -->
+        <header class="glass sticky top-0 z-20 px-4 py-3 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+            <div class="flex items-center gap-3 flex-wrap">
+                <button onclick="goHome()" class="w-10 h-10 rounded-lg flex items-center justify-center bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 transition-colors" title="Գլխավոր">
+                    <i class="fa-solid fa-house"></i>
+                </button>
+                
+                <div class="px-3 py-2 rounded-lg bg-white/40 dark:bg-slate-800/40 font-semibold border border-slate-200 dark:border-slate-600 text-sm">
+                    <span class="text-green-600 dark:text-green-400"><i class="fa-solid fa-check"></i> <span id="stat-correct">0</span></span> | 
+                    <span class="text-red-600 dark:text-red-400"><i class="fa-solid fa-xmark"></i> <span id="stat-wrong">0</span></span>
+                </div>
+
+                <select id="topic-select" onchange="loadRandomTask()" class="bg-white/50 dark:bg-slate-800/50 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary w-48 truncate">
+                    <!-- Заполняется из JS -->
+                </select>
+
+                <div class="flex items-center rounded-lg bg-white/50 dark:bg-slate-800/50 border border-slate-300 dark:border-slate-600 overflow-hidden">
+                    <button onclick="navigateTask(-1)" class="px-3 py-2 hover:bg-slate-200 dark:hover:bg-slate-700"><i class="fa-solid fa-chevron-left"></i></button>
+                    <input type="number" id="task-entry" onkeypress="handleEnter(event)" class="w-16 bg-transparent text-center outline-none border-x border-slate-300 dark:border-slate-600 py-2 font-bold appearance-none">
+                    <button onclick="navigateTask(1)" class="px-3 py-2 hover:bg-slate-200 dark:hover:bg-slate-700"><i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+
+                <button onclick="loadTaskFromInput()" class="px-4 py-2 rounded-lg bg-primary text-white font-semibold hover:bg-indigo-700 transition-colors text-sm">Բացել</button>
+            </div>
+
+            <div class="flex items-center gap-3 flex-wrap">
+                <div class="flex gap-4 text-sm font-medium mr-2">
+                    <label class="flex items-center cursor-pointer gap-2"><input type="checkbox" id="check-random-nav" checked class="accent-primary w-4 h-4"> Ռանդոմ</label>
+                    <label class="flex items-center cursor-pointer gap-2"><input type="checkbox" id="check-only-test" class="accent-primary w-4 h-4"> Միայն թեստ</label>
+                    <label class="flex items-center cursor-pointer gap-2"><input type="checkbox" id="check-only-errors" onchange="toggleMistakeMode()" class="accent-red-500 w-4 h-4"> Միայն սխալներ</label>
+                </div>
+
+                <span id="info-label" class="font-bold text-slate-500 text-sm mr-2 hidden md:inline-block"></span>
+                
+                <!-- Tools -->
+                <button onclick="downloadCurrentPDF()" class="w-10 h-10 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 flex items-center justify-center transition-transform hover:scale-105" title="Ներբեռնել PDF"><i class="fa-solid fa-download"></i></button>
+                <button onclick="toggleDarkMode()" class="w-10 h-10 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 flex items-center justify-center transition-transform hover:scale-105"><i class="fa-solid fa-moon dark:hidden"></i><i class="fa-solid fa-sun hidden dark:inline-block"></i></button>
+                <button onclick="toggleAISidebar()" class="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-bold hover:shadow-lg hover:scale-105 transition-all flex items-center gap-2"><i class="fa-solid fa-robot"></i> AI Օգնական</button>
+            </div>
+        </header>
+
+        <!-- Main Content Area (Canvas + Sidebar) -->
+        <div class="flex-1 overflow-hidden relative">
+            <!-- Canvas Container -->
+                <div id="canvas-container" class="flex-1 p-4 md:p-8 overflow-auto flex items-center justify-center">
+                    <div id="loading-text" class="text-lg font-bold text-slate-500 animate-pulse flex flex-col items-center gap-4">
+                    <i class="fa-regular fa-image text-4xl"></i>
+                    <span>Նկարը բեռնվում է...</span>
+                </div>
+                <canvas id="pdf-canvas" class="hidden max-w-full h-auto bg-white border border-slate-200 m-auto"></canvas>
+</div>
+
+            <!-- ИИ Sidebar (Slide in from right) -->
+            <div id="ai-sidebar" class="slide-in-right glass absolute md:relative right-0 top-0 bottom-0 w-full md:w-[450px] border-l border-slate-200/50 dark:border-slate-700/50 z-30 flex flex-col shadow-2xl">
+                <div class="p-4 border-b border-slate-200/50 dark:border-slate-700/50 flex justify-between items-center bg-white/40 dark:bg-slate-800/40">
+                    <h3 class="font-bold text-lg flex items-center gap-2"><i class="fa-solid fa-sparkles text-purple-500"></i> AI Բացատրություն</h3>
+                    <button onclick="toggleAISidebar()" class="text-slate-500 hover:text-red-500 text-xl"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                
+                <div id="ai-content" class="flex-1 p-5 overflow-y-auto markdown-body text-sm">
+                    <div class="text-center text-slate-500 dark:text-slate-400 mt-10">
+                        <i class="fa-solid fa-robot text-4xl mb-3 opacity-50"></i>
+                        <p>Սեղմեք "Բացատրել խնդիրը" կոճակին՝ քայլ առ քայլ լուծում ստանալու համար:</p>
+                    </div>
+                </div>
+
+                <div class="p-4 border-t border-slate-200/50 dark:border-slate-700/50 bg-white/40 dark:bg-slate-800/40">
+                    <button onclick="askAITutor()" id="ai-ask-btn" class="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold flex items-center justify-center gap-2 transition-colors">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Բացատրել խնդիրը
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer / Actions Glass -->
+        <footer class="glass flex-shrink-0 p-6 flex flex-col items-center justify-center gap-4 min-h-[120px] border-t border-white/20">
+            <div id="btn-container" class="flex flex-wrap justify-center gap-4 w-full max-w-3xl"></div>
+            <div id="feedback-msg" class="hidden px-6 py-3 rounded-xl font-bold text-lg text-center animate-[fadeIn_0.3s]"></div>
+        </footer>
+    </div>
+
+    <!-- Модальное окно ошибок -->
+    <div id="modal-overlay" class="hidden absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="glass w-full max-w-md rounded-2xl flex flex-col max-h-[80vh] overflow-hidden shadow-2xl animate-[fadeIn_0.2s]">
+            <div class="p-4 border-b border-slate-200/30 flex justify-between items-center bg-white/30 dark:bg-slate-800/30">
+                <h3 class="font-bold text-lg"><i class="fa-solid fa-triangle-exclamation text-red-500 mr-2"></i> Սխալների ցանկ</h3>
+                <button onclick="closeModal()" class="text-slate-500 hover:text-slate-800 dark:hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div id="errors-list" class="flex-1 overflow-y-auto p-2 flex flex-col gap-2"></div>
+            <div class="p-4 border-t border-slate-200/30 bg-white/30 dark:bg-slate-800/30">
+                <button onclick="clearErrors()" class="w-full py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white font-bold transition-colors">Մաքրել բոլորը</button>
+            </div>
+        </div>
+    </div>
+    <script src="config.js"></script>
+    <script>
+        // ==========================================
+        // НАСТРОЙКИ ПРИЛОЖЕНИЯ И ИИ (API CONFIG)
+        // ==========================================
+        
+        // Вставь сюда свой API ключ Google Gemini
+        const apiKey = CONFIG.GEMINI_API_KEY;
+        const FILES_CONFIG = {
+            "FILE 1": { 
+                fetchUrl: "https://cdn.jsdelivr.net/gh/AniHarutyunyanH/physics-shtemaran-files@main/shtem1.pdf",
+                matchName: "shtem1.pdf", jsonKey: "shtem1",
+                ranges: [[1, 125], [201, 306], [402, 437], [465, 553], [618, 667], [689, 746], [777, 880], [950, 1060], [1132, 1234], [1310, 1427], [1496, 1600], [1687, 1819], [1928, 2035]],
+                topics: [
+                    { id: 0, name: "Բոլոր թեմաները (All)", min: 1, max: 9999 },
+                    { id: 1, name: "1. Կինեմատիկա", min: 1, max: 125 },
+                    { id: 2, name: "2. Դինամիկա", min: 201, max: 306 },
+                    { id: 3, name: "3. Ստատիկա", min: 402, max: 553 },
+                    { id: 4, name: "4. Աշխատանք, էներգիա...", min: 618, max: 746 },
+                    { id: 5, name: "5. Հիդրոստատիկա", min: 777, max: 880 },
+                    { id: 6, name: "6. Մեխանիկական տատանումներ", min: 950, max: 1060 },
+                    { id: 7, name: "7. Մոլեկուլային-կինետիկ...", min: 1132, max: 1234 },
+                    { id: 8, name: "8. Ջերմադինամիկա", min: 1310, max: 1427 },
+                    { id: 9, name: "9. Էլեկտրաստատիկա", min: 1496, max: 1600 },
+                    { id: 10, name: "10. Հաստատուն հոսանք...", min: 1687, max: 1819 },
+                    { id: 11, name: "11. Մագնիսական դաշտ...", min: 1928, max: 2100 }
+                ]
+            }, 
+            "FILE 2": { 
+                fetchUrl: "https://cdn.jsdelivr.net/gh/AniHarutyunyanH/physics-shtemaran-files@main/shtem2.pdf",
+                matchName: "shtem2.pdf", jsonKey: "shtem2",
+                ranges: [[1, 124], [201, 305], [401, 438], [465, 554], [619, 667], [690, 747], [778, 880], [951, 1060], [1133, 1234], [1311, 1428], [1495, 1597], [1687, 1819], [1927, 2031]],
+                topics: [
+                    { id: 0, name: "Բոլոր թեմաները (All)", min: 1, max: 9999 },
+                    { id: 1, name: "1. Կինեմատիկա", min: 1, max: 124 },
+                    { id: 2, name: "2. Դինամիկա", min: 201, max: 305 },
+                    { id: 3, name: "3. Ստատիկա", min: 401, max: 554 },
+                    { id: 4, name: "4. Աշխատանք, էներգիա...", min: 619, max: 747 },
+                    { id: 5, name: "5. Հիդրոստատիկա", min: 778, max: 880 },
+                    { id: 6, name: "6. Մեխանիկական տատանումներ", min: 951, max: 1060 },
+                    { id: 7, name: "7. Մոլեկուլային-կինետիկ...", min: 1133, max: 1234 },
+                    { id: 8, name: "8. Ջերմադինամիկա", min: 1311, max: 1428 },
+                    { id: 9, name: "9. Էլեկտրաստատիկա", min: 1495, max: 1597 },
+                    { id: 10, name: "10. Հաստատուն հոսանք...", min: 1687, max: 1819 },
+                    { id: 11, name: "11. Մագնիսական դաշտ...", min: 1927, max: 2088 }
+                ]
+            }
+        };
+
+        const STORAGE_KEY = "shtemaran_wrong_answers"; 
+        let wrongAnswers = []; 
+        let currentMode = null;
+        let activeFile = "FILE 1";
+        let currentTask = null;
+
+        let manifestData = [];
+        let answersData = {};
+        let loadedPdfDocs = { "FILE 1": null, "FILE 2": null };
+        let sessionCorrect = 0; let sessionWrong = 0;
+
+        // ==========================================
+        // ИНИЦИАЛИЗАЦИЯ И ДАННЫЕ
+        // ==========================================
+        async function loadInitialData() {
+            try {
+                populateTopics(); 
+                const [manifestRes, answersRes] = await Promise.all([ fetch('./manifest.json'), fetch('./answers_final.json') ]);
+                if (!manifestRes.ok || !answersRes.ok) throw new Error("Files not found");
+                
+                const mData = await manifestRes.json();
+                manifestData = mData.tasks || mData; 
+                answersData = await answersRes.json();
+
+                const savedErrors = localStorage.getItem(STORAGE_KEY);
+                if (savedErrors) try { wrongAnswers = JSON.parse(savedErrors); } catch(e){}
+
+                document.getElementById('init-screen').classList.add('hidden');
+                document.getElementById('start-screen').classList.replace('hidden', 'flex');
+            } catch (err) {
+                document.getElementById('init-screen').innerHTML = `<div class="text-red-500 font-bold text-xl p-6 glass rounded-xl"><i class="fa-solid fa-triangle-exclamation"></i> Սխալ: Չհաջողվեց բեռնել JSON ֆայլերը:</div>`;
+                console.error(err);
+            }
+        }
+
+        function populateTopics() {
+            const select = document.getElementById('topic-select');
+            select.innerHTML = "";
+            FILES_CONFIG[activeFile].topics.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t.id; opt.innerText = t.name; select.appendChild(opt);
+            });
+        }
+
+        function getActiveTopicBounds() {
+            const topicId = parseInt(document.getElementById('topic-select').value, 10);
+            const topic = FILES_CONFIG[activeFile].topics.find(t => t.id === topicId);
+            return { min: topic.min, max: topic.max };
+        }   
+
+        function fetchAnswerData(fileKey, n) {
+            const jsonKey = FILES_CONFIG[fileKey].jsonKey;
+            if (answersData[jsonKey] && answersData[jsonKey][n.toString()]) return answersData[jsonKey][n.toString()].join("  /  ");
+            return "?";
+        }
+
+        // ==========================================
+        // РЕНДЕРИНГ PDF
+        // ==========================================
+        async function fetchTaskImage(fileKey, n) {
+            const fetchUrl = FILES_CONFIG[fileKey].fetchUrl;
+            const matchName = FILES_CONFIG[fileKey].matchName;
+            const taskInfo = manifestData.find(t => parseInt(t.id, 10) === parseInt(n, 10) && (t.file || "").includes(matchName));
+            if (!taskInfo) return false; 
+
+            try {
+                if (!loadedPdfDocs[fileKey]) loadedPdfDocs[fileKey] = await pdfjsLib.getDocument(fetchUrl).promise;
+                const doc = loadedPdfDocs[fileKey];
+                const page = await doc.getPage(taskInfo.page + 1);
+
+                const scale = 2.5; 
+                const viewport = page.getViewport({ scale });
+
+                const offscreenCanvas = document.createElement('canvas');
+                offscreenCanvas.width = viewport.width; offscreenCanvas.height = viewport.height;
+                const offCtx = offscreenCanvas.getContext('2d');
+                await page.render({ canvasContext: offCtx, viewport }).promise;
+
+                const [x0, y0, x1, y1] = taskInfo.rect;
+                const sx0 = x0 * scale, sy0 = y0 * scale, sWidth = (x1 - x0) * scale, sHeight = (y1 - y0) * scale;
+
+                const visibleCanvas = document.getElementById('pdf-canvas');
+                visibleCanvas.width = sWidth; visibleCanvas.height = sHeight;
+                const vCtx = visibleCanvas.getContext('2d');
+
+                vCtx.clearRect(0, 0, sWidth, sHeight);
+                vCtx.fillStyle = "#ffffff"; vCtx.fillRect(0, 0, sWidth, sHeight);
+                vCtx.drawImage(offscreenCanvas, sx0, sy0, sWidth, sHeight, 0, 0, sWidth, sHeight);
+                
+                return true;
+            } catch (err) { console.error("PDF Render Error:", err); return false; }
+        }
+
+        // ==========================================
+        // НАВИГАЦИЯ И ЛОГИКА QUIZ
+        // ==========================================
+        function startQuiz(mode) {
+            currentMode = mode;
+            activeFile = (mode === "FILE 1" || mode === "FILE 2") ? mode : "FILE 1";
+            populateTopics();
+            document.getElementById('start-screen').classList.replace('flex', 'hidden');
+            document.getElementById('main-app').classList.replace('hidden', 'flex');
+            loadRandomTask();
+        }
+
+        function goHome() {
+            document.getElementById('main-app').classList.replace('flex', 'hidden');
+            document.getElementById('start-screen').classList.replace('hidden', 'flex');
+            currentMode = null;
+        }
+
+        function isChoiceTask(fileKey, n) {
+            return FILES_CONFIG[fileKey].ranges.some(r => n >= r[0] && n <= r[1]);
+        }
+
+        async function loadTask(n, fileToUse = null) {
+            document.getElementById('feedback-msg').classList.add('hidden');
+            resetAIContext();
+
+            let prevFile = activeFile;
+            activeFile = fileToUse || ((currentMode === "COMBINED") ? "FILE 1" : currentMode);
+            if (prevFile !== activeFile) populateTopics();
+
+            const canvas = document.getElementById('pdf-canvas');
+            const loading = document.getElementById('loading-text');
+            canvas.classList.add('hidden'); loading.classList.remove('hidden');
+            document.getElementById('btn-container').innerHTML = '';
+
+            currentTask = parseInt(n, 10);
+            document.getElementById('task-entry').value = currentTask;
+            document.getElementById('info-label').innerText = activeFile === "FILE 1" ? "Շտեմ. 1" : "Շտեմ. 2";
+
+            const success = await fetchTaskImage(activeFile, currentTask);
+            
+            if (success) {
+                loading.classList.add('hidden'); canvas.classList.remove('hidden');
+                updateButtons(currentTask);
+            } else {
+                loading.innerHTML = `<i class="fa-solid fa-circle-exclamation text-red-500 text-4xl"></i><span>Սխալ՝ №${currentTask} չգտնվեց</span>`;
+            }
+        }
+
+        function loadTaskFromInput(forcedId = null) {
+            const rawVal = document.getElementById('task-entry').value;
+            if (!rawVal && forcedId === null) return; 
+            const val = forcedId !== null ? forcedId : parseInt(rawVal, 10);
+            if (!val || isNaN(val)) return;
+
+            let targetFile = activeFile;
+            let existsInCurrent = manifestData.some(t => parseInt(t.id, 10) === val && (t.file || "").includes(FILES_CONFIG[activeFile].matchName));
+
+            if (!existsInCurrent) {
+                let otherFile = activeFile === "FILE 1" ? "FILE 2" : "FILE 1";
+                if(manifestData.some(t => parseInt(t.id, 10) === val && (t.file || "").includes(FILES_CONFIG[otherFile].matchName))) {
+                    targetFile = otherFile; existsInCurrent = true;
+                }
+            }
+            if (existsInCurrent) loadTask(val, targetFile);
+            else showFeedback(`№${val} առաջադրանքը չգտնվեց:`, 'error');
+        }
+
+        function navigateTask(dir) {
+            if (document.getElementById('check-random-nav').checked && dir === 1) loadRandomTask();
+            else if (currentTask !== null) loadTaskFromInput(currentTask + dir);
+        }
+
+        function loadRandomTask() {
+            const onlyTest = document.getElementById('check-only-test').checked;
+            const onlyErrors = document.getElementById('check-only-errors').checked;
+            const bounds = getActiveTopicBounds();
+
+            let validTasks = manifestData.filter(t => {
+                let fStr = t.file || "";
+                let fKey = fStr.includes(FILES_CONFIG["FILE 1"].matchName) ? "FILE 1" : fStr.includes(FILES_CONFIG["FILE 2"].matchName) ? "FILE 2" : null;
+                if (!fKey || (currentMode !== "COMBINED" && currentMode !== fKey)) return false;
+                let tId = parseInt(t.id, 10);
+                if (onlyTest && !isChoiceTask(fKey, tId)) return false;
+                if (tId < bounds.min || tId > bounds.max) return false;
+                return true;
+            });
+
+            if (onlyErrors) {
+                if (wrongAnswers.length === 0) {
+                    alert("Սխալներ չկան:"); document.getElementById('check-only-errors').checked = false;
+                } else {
+                    validTasks = validTasks.filter(t => wrongAnswers.some(w => w.file === (t.file.includes("shtem1") ? "FILE 1":"FILE 2") && w.task === parseInt(t.id, 10)));
+                }
+            }
+
+            if (validTasks.length === 0) { showFeedback("Չգտնվեց:", 'error'); return; }
+            const rTask = validTasks[Math.floor(Math.random() * validTasks.length)];
+            loadTask(rTask.id, rTask.file.includes("shtem1") ? "FILE 1" : "FILE 2");
+        }
+
+        // ==========================================
+        // ИНТЕРФЕЙС И КНОПКИ ОТВЕТОВ
+        // ==========================================
+       // ==========================================
+        // ИНТЕРФЕЙС И КНОПКИ ОТВЕТОВ
+        // ==========================================
+        function updateButtons(n) {
+            const container = document.getElementById('btn-container');
+            container.innerHTML = ''; 
+            // Добавляем нижний отступ, чтобы приподнять блок на телефонах
+            container.classList.add('pb-10', 'sm:pb-4');
+
+            const isChoice = isChoiceTask(activeFile, n);
+
+            if (isChoice) {
+                for (let i = 1; i <= 4; i++) {
+                    const b = document.createElement('button');
+                    // Добавлены классы w-14 h-14 для мобильных и sm:w-16 sm:h-16 для ПК + mb-2
+                    b.className = 'choice-btn w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white/60 dark:bg-slate-800/60 border-2 border-slate-300 dark:border-slate-600 font-bold text-xl sm:text-2xl shadow-sm hover:border-primary hover:text-primary transition-all mb-2';
+                    b.innerText = i; b.onclick = () => processChoice(i, b);
+                    container.appendChild(b);
+                }
+            } else {
+                const b = document.createElement('button');
+                b.className = 'px-8 py-4 mb-2 rounded-xl bg-accent hover:bg-amber-600 text-white font-bold text-lg shadow-lg transition-transform hover:scale-105';
+                b.innerText = "Ցույց տալ պատասխանը"; b.onclick = showFullAnswer;
+                container.appendChild(b);
+            }
+        }
+
+        function processChoice(val, clickedBtn) {
+            const correctAns = fetchAnswerData(activeFile, currentTask).split(" / ")[0].trim();
+            const isCorrect = val.toString() === correctAns.toString();
+            
+            // Блокируем все кнопки ответов
+            document.querySelectorAll('.choice-btn').forEach(btn => {
+                btn.disabled = true;
+                if (btn.innerText === correctAns) {
+                    btn.classList.add('bg-green-500', 'border-green-500', 'text-white');
+                    btn.classList.remove('bg-white/60', 'dark:bg-slate-800/60', 'border-slate-300');
+                } else if (btn === clickedBtn && !isCorrect) {
+                    btn.classList.add('bg-red-500', 'border-red-500', 'text-white');
+                    btn.classList.remove('bg-white/60', 'dark:bg-slate-800/60', 'border-slate-300');
+                }
+            });
+
+            if (isCorrect) {
+                sessionCorrect++; document.getElementById('stat-correct').innerText = sessionCorrect;
+                showFeedback("✅ Ճիշտ է:", 'success');
+                wrongAnswers = wrongAnswers.filter(w => !(w.file === activeFile && w.task === currentTask));
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(wrongAnswers));
+                setTimeout(() => navigateTask(1), 1000);
+            } else {
+                sessionWrong++; document.getElementById('stat-wrong').innerText = sessionWrong;
+                showFeedback(`❌ Սխալ է: Ճիշտը՝ ${correctAns}`, 'error');
+                saveWrongAnswer(activeFile, currentTask);
+                
+                // --- ДОБАВЛЕНО: Кнопка "Следующий" при неверном ответе ---
+                const container = document.getElementById('btn-container');
+                // Добавляем кнопку, если её еще нет в контейнере
+                if (!container.querySelector('.next-btn-wrong')) {
+                    const nextBtn = document.createElement('button');
+                    nextBtn.className = 'next-btn-wrong mt-4 px-8 py-3 rounded-xl bg-primary hover:bg-indigo-700 text-white font-bold shadow-md transition-transform hover:scale-105';
+                    nextBtn.innerHTML = `Հաջորդը <i class="fa-solid fa-arrow-right"></i>`;
+                    nextBtn.onclick = () => navigateTask(1);
+                    container.appendChild(nextBtn);
+                }
+            }
+        }
+
+            
+
+        function showFullAnswer() {
+            const ans = fetchAnswerData(activeFile, currentTask);
+            const container = document.getElementById('btn-container');
+            container.innerHTML = '';
+            showFeedback(`Պատասխան: ${ans}`, 'info');
+
+            container.innerHTML = `
+                <button onclick="addToWrong()" class="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold shadow-md transition-transform hover:scale-105"><i class="fa-solid fa-plus"></i> Սխալներում</button>
+                <button onclick="navigateTask(1)" class="px-6 py-3 rounded-xl bg-primary hover:bg-indigo-700 text-white font-bold shadow-md transition-transform hover:scale-105">Հաջորդը <i class="fa-solid fa-arrow-right"></i></button>
+            `;
+        }
+
+        function showFeedback(text, type) {
+            const fb = document.getElementById('feedback-msg');
+            fb.innerText = text; fb.classList.remove('hidden', 'bg-green-100', 'bg-red-100', 'bg-blue-100', 'text-green-800', 'text-red-800', 'text-blue-800');
+            if(type==='success') fb.classList.add('bg-green-100', 'text-green-800', 'dark:bg-green-900', 'dark:text-green-100');
+            if(type==='error') fb.classList.add('bg-red-100', 'text-red-800', 'dark:bg-red-900', 'dark:text-red-100');
+            if(type==='info') fb.classList.add('bg-blue-100', 'text-blue-800', 'dark:bg-blue-900', 'dark:text-blue-100');
+        }
+
+        // ==========================================
+        // ИНТЕГРАЦИЯ ИИ (Gemini 3 Flash Preview) + MathJax + Внедрение правильного ответа
+        // ==========================================
+        function toggleAISidebar() {
+            const sidebar = document.getElementById('ai-sidebar');
+            sidebar.classList.toggle('open');
+        }
+
+        function resetAIContext() {
+            const content = document.getElementById('ai-content');
+            content.innerHTML = `
+                <div class="text-center text-slate-500 dark:text-slate-400 mt-10">
+                    <i class="fa-solid fa-robot text-4xl mb-3 opacity-50"></i>
+                    <p>Սեղմեք "Բացատրել խնդիրը" կոճակին՝ քայլ առ քայլ լուծում ստանալու համար:</p>
+                </div>`;
+            document.getElementById('ai-ask-btn').disabled = false;
+            document.getElementById('ai-ask-btn').innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> Բացատրել խնդիրը`;
+        }
+
+        async function askAITutor() {
+            if (!apiKey || apiKey.trim() === "") {
+                alert("API Key-ը բացակայում է կոդում (Вставьте ваш API ключ в код).");
+                return;
+            }
+
+            const canvas = document.getElementById('pdf-canvas');
+            if (canvas.classList.contains('hidden')) return;
+
+            const btn = document.getElementById('ai-ask-btn');
+            const content = document.getElementById('ai-content');
+            
+            document.getElementById('ai-sidebar').classList.add('open');
+            
+            btn.disabled = true;
+            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Մտածում է...`;
+            content.innerHTML = `<div class="flex flex-col items-center justify-center mt-10 gap-4 text-purple-500">
+                <i class="fa-solid fa-circle-notch fa-spin text-4xl"></i>
+                <span class="font-semibold text-sm animate-pulse">Ուղարկվում է Google Gemini 3...</span>
+            </div>`;
+
+            try {
+                const base64Image = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+                
+                // ВАЖНО: Достаем правильный ответ из базы, чтобы дать его ИИ как подсказку
+                const correctAnswer = fetchAnswerData(activeFile, currentTask);
+
+                // Новый промпт, заставляющий ИИ решать под правильный ответ
+                const prompt = `Դուք ֆիզիկայի պրոֆեսիոնալ ուսուցիչ եք։ Լուծեք նկարում պատկերված ֆիզիկայի խնդիրը կամ թեստը։
+ՈՒՇԱԴՐՈՒԹՅՈՒՆ: Այս խնդրի ճիշտ վերջնական պատասխանն է (կամ պատասխաններն են)՝ **${correctAnswer}**:
+Խնդրում եմ բացատրեք քայլ առ քայլ, տրամաբանորեն և հասկանալի լեզվով, թե ինչպես ստանալ ճիշտ այս պատասխանը։
+Պատասխանը գրեք միայն հայերենով (Armenian language only)։ Օգտագործեք Markdown ձևաչափում (թավատառեր, բանաձևերի առանձնացում)։`;
+
+                const payload = {
+                    contents: [{
+                        parts: [
+                            { text: prompt },
+                            { inline_data: { mime_type: "image/jpeg", data: base64Image } }
+                        ]
+                    }]
+                };
+
+                const cleanApiKey = apiKey.trim();
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${cleanApiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    let errorMessage = `HTTP ${response.status}`;
+                    try {
+                        const errorData = await response.json();
+                        if (errorData.error && errorData.error.message) {
+                            errorMessage = errorData.error.message;
+                        }
+                    } catch(e) {}
+                    
+                    if (response.status === 503) {
+                        throw new Error("Google-ի սերվերները ծանրաբեռնված են (503): Խնդրում ենք փորձել 1 րոպեից:");
+                    }
+                    throw new Error(`Google API: ${errorMessage}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.candidates && data.candidates[0].content.parts.length > 0) {
+                    const textResponse = data.candidates[0].content.parts[0].text;
+                    
+                    // Сначала парсим Markdown
+                    content.innerHTML = marked.parse(textResponse);
+                    
+                    // Затем запускаем MathJax, чтобы он отрисовал все формулы LaTeX ($...$)
+                    if (window.MathJax) {
+                        window.MathJax.typesetPromise([content]).catch((err) => console.error('MathJax error: ', err));
+                    }
+
+                } else {
+                    throw new Error("Անհասկանալի պատասխան սերվերից:");
+                }
+                
+            } catch (error) {
+                console.error("Gemini API Error:", error);
+                content.innerHTML = `<div class="text-red-600 p-4 bg-red-50 dark:bg-red-900/30 rounded-lg border border-red-200 dark:border-red-800">
+                    <p class="font-bold mb-2"><i class="fa-solid fa-bug"></i> Սխալ առաջացավ</p>
+                    <p class="text-sm font-mono">${error.message}</p>
+                </div>`;
+            } finally {
+                btn.innerHTML = `<i class="fa-solid fa-rotate-right"></i> Նորից հարցնել`;
+                btn.disabled = false;
+            }
+        }
+
+        // ==========================================
+        // УТИЛИТЫ И МОДАЛЬНЫЕ ОКНА
+        // ==========================================
+        function saveWrongAnswer(f, t) {
+            if (!wrongAnswers.some(w => w.file === f && w.task === t)) {
+                wrongAnswers.push({ file: f, task: t });
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(wrongAnswers));
+            }
+        }
+        function addToWrong() { saveWrongAnswer(activeFile, currentTask); showFeedback("✅ Ավելացվեց", 'success'); }
+
+        function showWrongList() {
+            if (wrongAnswers.length === 0) return alert("Սխալներ չկան");
+            const list = document.getElementById('errors-list'); list.innerHTML = '';
+            wrongAnswers.sort((a,b)=>a.file===b.file ? a.task-b.task : a.file.localeCompare(b.file)).forEach(i => {
+                const b = document.createElement('button');
+                b.className = 'w-full text-left p-3 rounded-lg bg-white/50 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-600 font-medium transition-colors';
+                b.innerHTML = `<span class="text-xs text-slate-500 block mb-1">${i.file==="FILE 1"?"Շտեմ 1":"Շտեմ 2"}</span> Խնդիր №${i.task}`;
+                b.onclick = () => { 
+                    document.getElementById('start-screen').classList.replace('flex', 'hidden');
+                    document.getElementById('main-app').classList.replace('hidden', 'flex');
+                    if (!currentMode) currentMode = "COMBINED";
+                    loadTask(i.task, i.file); closeModal(); 
+                };
+                list.appendChild(b);
+            });
+            document.getElementById('modal-overlay').classList.replace('hidden', 'flex');
+        }
+
+        function clearErrors() { 
+            wrongAnswers = []; localStorage.removeItem(STORAGE_KEY); closeModal(); 
+            document.getElementById('check-only-errors').checked = false; alert("Մաքրված է"); 
+        }
+        function closeModal() { document.getElementById('modal-overlay').classList.replace('flex', 'hidden'); }
+        function toggleDarkMode() { document.documentElement.classList.toggle('dark'); }
+        function toggleMistakeMode() {
+            if (document.getElementById('check-only-errors').checked && wrongAnswers.length === 0) {
+                alert("Սխալների ցանկը դատարկ է:"); document.getElementById('check-only-errors').checked = false;
+            }
+        }
+        function downloadCurrentPDF() {
+            if(!activeFile) return;
+            const a = document.createElement('a'); a.href = FILES_CONFIG[activeFile].fetchUrl;
+            a.target = '_blank'; a.download = activeFile + ".pdf"; a.click();
+        }
+        function handleEnter(e) { if(e.key === 'Enter') loadTaskFromInput(); }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (document.getElementById('modal-overlay').classList.contains('flex')) return;
+            if (document.activeElement.tagName === 'INPUT' && e.key !== 'Enter') return;
+            if (e.key >= '1' && e.key <= '4') {
+                const btns = document.querySelectorAll('.choice-btn');
+                const target = Array.from(btns).find(b => b.innerText === e.key);
+                if (target && !target.disabled) target.click();
+            } else if (e.key.toLowerCase() === 'r' || e.key === 'կ') { if(!document.getElementById('main-app').classList.contains('hidden')) loadRandomTask();
+            } else if (e.key === 'ArrowRight') { if(!document.getElementById('main-app').classList.contains('hidden')) navigateTask(1);
+            } else if (e.key === 'ArrowLeft') { if(!document.getElementById('main-app').classList.contains('hidden')) navigateTask(-1);
+            }
+        });
+
+        // ==========================================
+        // ИНИЦИАЛИЗАЦИЯ И ДАННЫЕ
+        // ==========================================
+        
+        
+        
+
+        window.onload = loadInitialData;
+
+    </script>
+</body>
+</html>
